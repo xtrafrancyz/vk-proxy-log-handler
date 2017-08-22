@@ -35,11 +35,13 @@ func startSyslog(host string) *syslog.Server {
 			entry.message = record["content"].(string)
 			entry.time = record["timestamp"].(time.Time)
 			match := logRegex.FindStringSubmatch(entry.message)
-			entry.ip = match[1]
-			entry.method = match[2]
-			entry.path = match[3]
-			entry.length, _ = strconv.Atoi(match[4])
-			handleLog(entry)
+			if len(match) == 5 {
+				entry.ip = match[1]
+				entry.method = match[2]
+				entry.path = match[3]
+				entry.length, _ = strconv.Atoi(match[4])
+				handleLog(entry)
+			}
 		}
 	}(channel)
 
