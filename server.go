@@ -12,8 +12,8 @@ import (
 )
 
 type StatEntry struct {
-	Online   int `json:"online"`
-	Traffic  int `json:"traffic"`
+	Online  int `json:"online"`
+	Traffic int `json:"traffic"`
 	Requests struct {
 		Api    int `json:"api"`
 		Assets int `json:"assets"`
@@ -32,7 +32,7 @@ func handleLog(entry LogEntry) {
 	if !ok {
 		stats = &StatEntry{}
 		for k := range data {
-			if k-key > 2*24*60*60 {
+			if key-k > 2*24*60*60 {
 				delete(data, k)
 			}
 		}
