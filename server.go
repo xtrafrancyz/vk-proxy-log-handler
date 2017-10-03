@@ -45,7 +45,7 @@ func handleLog(entry LogEntry) {
 	}
 	stats.Requests.Total++
 	stats.Traffic.Total += entry.length
-	if strings.HasSuffix(entry.path, "/_/api.vk.com/") || strings.HasPrefix(entry.path, "/_/imv") || !strings.HasSuffix(entry.path, "/_") {
+	if strings.HasPrefix(entry.path, "/_/api.vk.com/") || strings.HasPrefix(entry.path, "/_/imv") || !strings.HasPrefix(entry.path, "/_") {
 		stats.Requests.Api++
 		stats.Traffic.Api += entry.length
 	} else if strings.Contains(entry.path, "vkuservideo") || strings.Contains(entry.path, "vkuserlive") {
