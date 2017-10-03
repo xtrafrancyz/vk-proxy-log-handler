@@ -11,14 +11,19 @@ import (
 	"github.com/vharitonsky/iniflags"
 )
 
+type ContentType struct {
+	Api   int `json:"api"`
+	Video int `json:"video"`
+	Image int `json:"image"`
+	Audio int `json:"audio"`
+	Other int `json:"other"`
+	Total int `json:"total"`
+}
+
 type StatEntry struct {
-	Online  int `json:"online"`
-	Traffic int `json:"traffic"`
-	Requests struct {
-		Api    int `json:"api"`
-		Assets int `json:"assets"`
-		Total  int `json:"total"`
-	} `json:"requests"`
+	Online   int         `json:"online"`
+	Traffic  ContentType `json:"traffic"`
+	Requests ContentType `json:"requests"`
 }
 
 var data = make(map[int64]*StatEntry)
@@ -39,11 +44,22 @@ func handleLog(entry LogEntry) {
 		data[key] = stats
 	}
 	stats.Requests.Total++
-	stats.Traffic += entry.length
-	if strings.HasPrefix(entry.path, "/_") {
-		stats.Requests.Assets++
-	} else {
+	stats.Traffic.Total += entry.length
+	if strings.HasSuffix(entry.path, "/_/api.vk.com/") || strings.HasPrefix(entry.path, "/_/imv") || !strings.HasSuffix(entry.path, "/_") {
 		stats.Requests.Api++
+		stats.Traffic.Api += entry.length
+	} else if strings.Contains(entry.path, "vkuservideo") || strings.Contains(entry.path, "vkuserlive") {
+		stats.Requests.Video++
+		stats.Traffic.Video += entry.length
+	} else if strings.Contains(entry.path, "vkuseraudio") || strings.Contains(entry.path, ".mp3") {
+		stats.Requests.Audio++
+		stats.Traffic.Audio += entry.length
+	} else if strings.Contains(entry.path, ".png") {
+		stats.Requests.Image++
+		stats.Traffic.Image += entry.length
+	} else {
+		stats.Requests.Other++
+		stats.Traffic.Other += entry.length
 	}
 
 	cIp <- entry.ip
@@ -78,7 +94,7 @@ func main() {
 		}
 	}()
 
-	http.HandleFunc("/", handleWeb)
+	http.HandleFunc("/getData", handleWeb)
 	go http.ListenAndServe(*webHost, nil)
 	startSyslog(*syslogHost).Wait()
 }
