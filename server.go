@@ -48,13 +48,13 @@ func handleLog(entry LogEntry) {
 	if strings.HasPrefix(entry.path, "/_/api.vk.com/") || strings.HasPrefix(entry.path, "/_/imv") || !strings.HasPrefix(entry.path, "/_") {
 		stats.Requests.Api++
 		stats.Traffic.Api += entry.length
-	} else if strings.Contains(entry.path, "vkuservideo") || strings.Contains(entry.path, "vkuserlive") {
+	} else if strings.Contains(entry.path, "vkuservideo") || strings.Contains(entry.path, "vkuserlive") || strings.Contains(entry.path, ".mp4") {
 		stats.Requests.Video++
 		stats.Traffic.Video += entry.length
 	} else if strings.Contains(entry.path, "vkuseraudio") || strings.Contains(entry.path, ".mp3") {
 		stats.Requests.Audio++
 		stats.Traffic.Audio += entry.length
-	} else if strings.Contains(entry.path, ".png") {
+	} else if strings.HasSuffix(entry.path, ".png") || strings.HasSuffix(entry.path, ".jpg") {
 		stats.Requests.Image++
 		stats.Traffic.Image += entry.length
 	} else {
