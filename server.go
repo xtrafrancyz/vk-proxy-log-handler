@@ -1,89 +1,102 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
-	"fmt"
-	"net/http"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/vharitonsky/iniflags"
 )
 
-type ContentType struct {
-	Api   int `json:"api"`
-	Video int `json:"video"`
-	Image int `json:"image"`
-	Audio int `json:"audio"`
-	Other int `json:"other"`
-	Total int `json:"total"`
+type statEntry struct {
+	bytes    int
+	requests int
 }
 
-type StatEntry struct {
-	Online   int         `json:"online"`
-	Traffic  ContentType `json:"traffic"`
-	Requests ContentType `json:"requests"`
+type stats struct {
+	api   statEntry
+	video statEntry
+	image statEntry
+	audio statEntry
+	other statEntry
+	dirty bool
 }
 
-var data = make(map[int64]*StatEntry)
+var statsInstance = &stats{}
 var cIp = make(chan string, 20)
 var uniquesMap = make(map[string]int64)
 
 func handleLog(entry LogEntry) {
-	key := entry.time.Unix() - int64(entry.time.Second())
-
-	stats, ok := data[key]
-	if !ok {
-		stats = &StatEntry{}
-		for k := range data {
-			if key-k > 2*24*60*60 {
-				delete(data, k)
-			}
-		}
-		data[key] = stats
-	}
-	stats.Requests.Total++
-	stats.Traffic.Total += entry.length
 	if strings.HasPrefix(entry.path, "/_/api.vk.com/") || strings.HasPrefix(entry.path, "/_/imv") || !strings.HasPrefix(entry.path, "/_") {
-		stats.Requests.Api++
-		stats.Traffic.Api += entry.length
-	} else if strings.Contains(entry.path, "vkuservideo") || strings.Contains(entry.path, "vkuserlive") || strings.Contains(entry.path, ".mp4") {
-		stats.Requests.Video++
-		stats.Traffic.Video += entry.length
+		statsInstance.api.requests++
+		statsInstance.api.bytes += entry.length
+	} else if strings.Contains(entry.path, ".mp4") || strings.Contains(entry.path, "vkuservideo") || strings.Contains(entry.path, "vkuserlive") {
+		statsInstance.video.requests++
+		statsInstance.video.bytes += entry.length
 	} else if strings.Contains(entry.path, "vkuseraudio") || strings.Contains(entry.path, ".mp3") {
-		stats.Requests.Audio++
-		stats.Traffic.Audio += entry.length
+		statsInstance.audio.requests++
+		statsInstance.audio.bytes += entry.length
 	} else if strings.HasSuffix(entry.path, ".png") || strings.HasSuffix(entry.path, ".jpg") {
-		stats.Requests.Image++
-		stats.Traffic.Image += entry.length
+		statsInstance.image.requests++
+		statsInstance.image.bytes += entry.length
 	} else {
-		stats.Requests.Other++
-		stats.Traffic.Other += entry.length
+		statsInstance.other.requests++
+		statsInstance.other.bytes += entry.length
 	}
+	statsInstance.dirty = true
 
 	cIp <- entry.ip
-	stats.Online = len(uniquesMap)
-}
-
-func handleWeb(w http.ResponseWriter, r *http.Request) {
-	encoded, _ := json.Marshal(data)
-	fmt.Fprintf(w, string(encoded))
 }
 
 func main() {
-	webHost := flag.String("web-host", "0.0.0.0:13554", "address to bind web")
 	syslogHost := flag.String("syslog-host", "0.0.0.0:7423", "address to bind syslog")
+	influxUrl := flag.String("influx-url", "http://127.0.0.1:8086", "address of InfluxDB")
+	influxDatabase := flag.String("influx-database", "vk_proxy", "database name")
+	influxRetentionPolicy := flag.String("influx-rp", "a_day", "retention policy")
+	influxUsername := flag.String("influx-username", "", "basic auth username")
+	influxPassword := flag.String("influx-password", "", "basic auth password")
 
 	iniflags.Parse()
 
-	ticker := time.NewTicker(5 * time.Second)
+	storage := newStorage(*influxUrl, *influxDatabase, *influxRetentionPolicy, *influxUsername, *influxPassword)
+
+	startOnlineTicker()
+	saveTicker := ticker{
+		precision: time.Minute,
+		callback: func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("panic: %s", recover())
+				}
+			}()
+			log.Printf("Save initiated")
+			online := len(uniquesMap)
+			if online > 0 || statsInstance.dirty {
+				s := statsInstance
+				go func() {
+					err := storage.save(s, online)
+					if err != nil {
+						log.Printf("save error: %s", err)
+					}
+				}()
+				statsInstance = &stats{}
+			}
+		},
+	}
+	saveTicker.start()
+
+	startSyslog(*syslogHost).Wait()
+}
+
+func startOnlineTicker() {
+	ticker := time.Tick(5 * time.Second)
 	go func() {
 		for {
 			select {
 			case ip := <-cIp:
 				uniquesMap[ip] = time.Now().Unix()
-			case <-ticker.C:
+			case <-ticker:
 				curr := time.Now().Unix()
 				for ip, lastAccess := range uniquesMap {
 					if curr-lastAccess > 3*60 {
@@ -93,8 +106,4 @@ func main() {
 			}
 		}
 	}()
-
-	http.HandleFunc("/getData", handleWeb)
-	go http.ListenAndServe(*webHost, nil)
-	startSyslog(*syslogHost).Wait()
 }
