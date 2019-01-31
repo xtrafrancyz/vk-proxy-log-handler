@@ -50,7 +50,8 @@ func handleLog(entry LogEntry) {
 }
 
 func main() {
-	syslogHost := flag.String("syslog-host", "0.0.0.0:7423", "address to bind syslog")
+	syslogHost := flag.String("syslog-host", "0.0.0.0:7423", "address to bind syslog (UDP)")
+	apiHost := flag.String("api-host", "127.0.0.1:8083", "address to bind api server (TCP)")
 	influxUrl := flag.String("influx-url", "http://127.0.0.1:8086", "address of InfluxDB")
 	influxDatabase := flag.String("influx-database", "vk_proxy", "database name")
 	influxRetentionPolicy := flag.String("influx-rp", "a_day", "retention policy")
@@ -86,6 +87,7 @@ func main() {
 	}
 	saveTicker.start()
 
+	startApiServer(*apiHost)
 	startSyslog(*syslogHost).Wait()
 }
 
