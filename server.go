@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"log"
+	"net/http"
+	"net/http/pprof"
 	"strings"
 	"time"
 
@@ -28,18 +30,34 @@ var cIp = make(chan string, 20)
 var uniquesMap = make(map[string]int64)
 
 func handleLog(entry LogEntry) {
-	if strings.HasPrefix(entry.path, "/_/api.vk.com/") || strings.HasPrefix(entry.path, "/_/imv") || !strings.HasPrefix(entry.path, "/_") {
+	if !strings.HasPrefix(entry.path, "/@") &&
+		(strings.HasPrefix(entry.path, "/_/api.vk.com/") ||
+			strings.HasPrefix(entry.path, "/_/imv") ||
+			!strings.HasPrefix(entry.path, "/_")) {
+
 		statsInstance.api.requests++
 		statsInstance.api.bytes += entry.length
-	} else if strings.Contains(entry.path, ".mp4") || strings.Contains(entry.path, "vkuservideo") || strings.Contains(entry.path, "vkuserlive") {
+
+	} else if strings.Contains(entry.path, ".mp4") ||
+		strings.Contains(entry.path, "vkuservideo") ||
+		strings.Contains(entry.path, "vkuserlive") {
+
 		statsInstance.video.requests++
 		statsInstance.video.bytes += entry.length
-	} else if strings.Contains(entry.path, "vkuseraudio") || strings.Contains(entry.path, ".mp3") {
+
+	} else if strings.Contains(entry.path, "vkuseraudio") ||
+		strings.Contains(entry.path, ".mp3") {
+
 		statsInstance.audio.requests++
 		statsInstance.audio.bytes += entry.length
-	} else if strings.HasSuffix(entry.path, ".png") || strings.HasSuffix(entry.path, ".jpg") {
+
+	} else if strings.HasSuffix(entry.path, ".png") ||
+		strings.HasSuffix(entry.path, ".jpg") ||
+		strings.HasPrefix(entry.path, "/_/vk.com/sticker") {
+
 		statsInstance.image.requests++
 		statsInstance.image.bytes += entry.length
+
 	} else {
 		statsInstance.other.requests++
 		statsInstance.other.bytes += entry.length
@@ -52,6 +70,7 @@ func handleLog(entry LogEntry) {
 func main() {
 	syslogHost := flag.String("syslog-host", "0.0.0.0:7423", "address to bind syslog (UDP)")
 	apiHost := flag.String("api-host", "127.0.0.1:8083", "address to bind api server (TCP)")
+	pprofHost := flag.String("pprof-host", "", "address to bind pprof (TCP)")
 	influxUrl := flag.String("influx-url", "http://127.0.0.1:8086", "address of InfluxDB")
 	influxDatabase := flag.String("influx-database", "vk_proxy", "database name")
 	influxRetentionPolicy := flag.String("influx-rp", "a_day", "retention policy")
@@ -86,6 +105,21 @@ func main() {
 		},
 	}
 	saveTicker.start()
+
+	if *pprofHost != "" {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		go func() {
+			err := http.ListenAndServe(*pprofHost, mux)
+			if err != nil {
+				log.Printf("Could not start pprof server: %s", err)
+			}
+		}()
+	}
 
 	startApiServer(*apiHost)
 	startSyslog(*syslogHost).Wait()

@@ -10,7 +10,6 @@ import (
 
 type LogEntry struct {
 	time    time.Time
-	message string
 	length  int
 	method  string
 	path    string
@@ -32,9 +31,8 @@ func startSyslog(host string) *syslog.Server {
 	go func(channel syslog.LogPartsChannel) {
 		for record := range channel {
 			entry := LogEntry{}
-			entry.message = record["content"].(string)
 			entry.time = record["timestamp"].(time.Time)
-			match := logRegex.FindStringSubmatch(entry.message)
+			match := logRegex.FindStringSubmatch(record["content"].(string))
 			if len(match) == 5 {
 				entry.ip = match[1]
 				entry.method = match[2]
