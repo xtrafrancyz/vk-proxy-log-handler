@@ -3,11 +3,13 @@ package main
 import (
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"strings"
 	"time"
 
+	"github.com/phuslu/iploc"
 	"github.com/vharitonsky/iniflags"
 )
 
@@ -17,23 +19,30 @@ type statEntry struct {
 }
 
 type stats struct {
-	api   statEntry
-	video statEntry
-	image statEntry
-	audio statEntry
-	other statEntry
-	dirty bool
+	api       statEntry
+	video     statEntry
+	image     statEntry
+	audio     statEntry
+	other     statEntry
+	dirty     bool
+	countries map[string]*statEntry
 }
 
-var statsInstance = &stats{}
+func newStats() *stats {
+	return &stats{
+		countries: make(map[string]*statEntry),
+	}
+}
+
+var statsInstance = newStats()
 var cIp = make(chan string, 20)
 var uniquesMap = make(map[string]int64)
 
 func handleLog(entry LogEntry) {
-	if !strings.HasPrefix(entry.path, "/@") &&
-		(strings.HasPrefix(entry.path, "/_/api.vk.com/") ||
-			strings.HasPrefix(entry.path, "/_/imv") ||
-			!strings.HasPrefix(entry.path, "/_")) {
+	if strings.HasPrefix(entry.path, "/@") ||
+		strings.HasPrefix(entry.path, "/_/api.vk.com") ||
+		strings.HasPrefix(entry.path, "/_/imv") ||
+		!strings.HasPrefix(entry.path, "/_") {
 
 		statsInstance.api.requests++
 		statsInstance.api.bytes += entry.length
@@ -62,6 +71,19 @@ func handleLog(entry LogEntry) {
 		statsInstance.other.requests++
 		statsInstance.other.bytes += entry.length
 	}
+
+	ip := net.ParseIP(entry.ip)
+	if ip != nil {
+		country := string(iploc.Country(ip))
+		e, ok := statsInstance.countries[country]
+		if !ok {
+			e = &statEntry{}
+			statsInstance.countries[country] = e
+		}
+		e.requests++
+		e.bytes += entry.length
+	}
+
 	statsInstance.dirty = true
 
 	cIp <- entry.ip
@@ -94,13 +116,13 @@ func main() {
 			online := len(uniquesMap)
 			if online > 0 || statsInstance.dirty {
 				s := statsInstance
+				statsInstance = newStats()
 				go func() {
 					err := storage.save(s, online)
 					if err != nil {
 						log.Printf("save error: %s", err)
 					}
 				}()
-				statsInstance = &stats{}
 			}
 		},
 	}

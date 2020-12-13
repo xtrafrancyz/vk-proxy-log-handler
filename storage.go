@@ -49,6 +49,16 @@ func (s *storage) save(stats *stats, online int) error {
 	})
 	bp.AddPoint(point)
 
+	for country, entry := range stats.countries {
+		point, _ := influx.NewPoint("country", map[string]string{
+			"country": country,
+		}, map[string]interface{}{
+			"requests": entry.requests,
+			"bytes":    entry.bytes,
+		})
+		bp.AddPoint(point)
+	}
+
 	return s.client.Write(bp)
 }
 
